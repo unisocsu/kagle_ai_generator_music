@@ -16,23 +16,33 @@ on:
       seed: {description: "Seed (-1 random)", required: true, type: string, default: "-1"}
       wait_for_result: {description: "Wait for Kaggle and publish results", required: true, type: boolean, default: true}
       max_wait_minutes: {description: "Maximum wait time", required: true, type: string, default: "240"}
-permissions: {contents: write}
-concurrency: {group: kaggle-music-run, cancel-in-progress: false}
+
+permissions:
+  contents: write
+concurrency:
+  group: kaggle-music-run
+  cancel-in-progress: false
+
 jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    env: {KAGGLE_USERNAME: "${{ secrets.kagle_user_name }}"}
+    env:
+      KAGGLE_USERNAME: ${{ secrets.kagle_user_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        with:
+          python-version: "3.11"
       - name: Install Kaggle CLI
         run: pip install kaggle
       - name: Configure Kaggle authentication
-        env: {KAGLE_KEY_SECRET: "${{ secrets.kagle_key }}"}
+        env:
+          KAGLE_KEY_SECRET: ${{ secrets.kagle_key }}
         run: |
-          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGLE_KEY_SECRET" ]; then echo "::error::Missing Kaggle secrets"; exit 1; fi
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGLE_KEY_SECRET" ]; then
+            echo "::error::Missing Kaggle secrets"; exit 1
+          fi
           mkdir -p "$HOME/.kaggle"
           if printf '%s' "$KAGLE_KEY_SECRET" | grep -Eq '^[0-9a-f]{32}$'; then
             KAGGLE_USERNAME="$KAGGLE_USERNAME" KAGGLE_KEY="$KAGLE_KEY_SECRET" python -c 'import json,os; print(json.dumps({"username":os.environ["KAGGLE_USERNAME"],"key":os.environ["KAGGLE_KEY"]}))' > "$HOME/.kaggle/kaggle.json"
@@ -40,42 +50,74 @@ jobs:
           else
             printf '%s' "$KAGLE_KEY_SECRET" > "$HOME/.kaggle/access_token"; chmod 600 "$HOME/.kaggle/access_token"
           fi
-      - name: Prepare kernel
+      - name: Prepare kernel bundle
         env:
-          IN_PROMPT: "${{ inputs.prompt }}"
-          IN_LYRICS: "${{ inputs.lyrics }}"
-          IN_VOCAL_LANGUAGE: "${{ inputs.vocal_language }}"
-          IN_INSTRUMENTAL: "${{ inputs.instrumental }}"
-          IN_DURATION: "${{ inputs.duration }}"
-          IN_NUM_SAMPLES: "${{ inputs.num_samples }}"
-          IN_SEED: "${{ inputs.seed }}"
+          IN_PROMPT: ${{ inputs.prompt }}
+          IN_LYRICS: ${{ inputs.lyrics }}
+          IN_VOCAL_LANGUAGE: ${{ inputs.vocal_language }}
+          IN_INSTRUMENTAL: ${{ inputs.instrumental }}
+          IN_DURATION: ${{ inputs.duration }}
+          IN_NUM_SAMPLES: ${{ inputs.num_samples }}
+          IN_SEED: ${{ inputs.seed }}
         run: python scripts/prepare_kernel.py
-      - name: Push kernel to Kaggle
+      - name: Submit kernel to Kaggle
         run: kaggle kernels push -p build/kernel
-      - name: Wait for kernel and download output
-        if: "${{ inputs.wait_for_result }}"
-        env: {MAX_WAIT_MINUTES: "${{ inputs.max_wait_minutes }}"}
+      - name: Wait for Kaggle execution
+        if: ${{ inputs.wait_for_result }}
+        env:
+          MAX_WAIT_MINUTES: ${{ inputs.max_wait_minutes }}
         run: |
-          REF="$(cat build/kernel_ref.txt)"; MAX_WAIT="${MAX_WAIT_MINUTES:-240}"
+          set -u
+          REF="$(cat build/kernel_ref.txt)"
+          MAX_WAIT="${MAX_WAIT_MINUTES:-240}"
           case "$MAX_WAIT" in ''|*[!0-9]*) MAX_WAIT=240;; esac
-          deadline=$(( $(date +%s) + MAX_WAIT * 60 )); result=timeout; sleep 60
+          deadline=$(( $(date +%s) + MAX_WAIT * 60 ))
+          result=timeout
           while [ "$(date +%s)" -lt "$deadline" ]; do
-            status="$(kaggle kernels status "$REF" 2>&1)" || { echo "$status"; sleep 60; continue; }
-            echo "$status"; lower="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
-            case "$lower" in *complete*) result=complete; break;; *error*|*cancel*|*fail*) result=failed; break;; esac
-            sleep 60
+            status="$(kaggle kernels status "$REF" 2>&1)" || {
+              echo "::warning::Could not read Kaggle status: $status"
+              sleep 45; continue
+            }
+            echo "$status"
+            lower="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+            case "$lower" in
+              *complete*) result=complete; break ;;
+              *error*|*cancel*|*fail*) result=failed; break ;;
+              *) sleep 45 ;;
+            esac
           done
-          mkdir -p out; kaggle kernels output "$REF" -p out || true
-          [ "$result" = complete ] || { echo "::error::Kaggle result: $result"; exit 1; }
-      - name: Publish release
-        if: "${{ success() && inputs.wait_for_result }}"
-        env: {GH_TOKEN: "${{ github.token }}"}
+          echo "$result" > kaggle-result.txt
+          echo "Kaggle execution result: $result"
+      - name: Download Kaggle output and logs
+        if: ${{ always() && inputs.wait_for_result }}
+        continue-on-error: true
         run: |
-          TAG="ace-step-run-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"; ZIP="ace_step_music_${GITHUB_RUN_NUMBER}.zip"
+          mkdir -p out
+          if [ -f build/kernel_ref.txt ]; then
+            REF="$(cat build/kernel_ref.txt)"
+            kaggle kernels output "$REF" -p out
+          else
+            echo "Kernel reference was not created." > out/download-error.txt
+          fi
+      - name: Publish successful generation
+        if: ${{ success() && inputs.wait_for_result }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! find out -type f -name '*.wav' -print -quit | grep -q .; then
+            echo "::error::Kaggle completed but no WAV files were downloaded."; exit 1
+          fi
+          TAG="ace-step-run-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          ZIP="ace_step_music_${GITHUB_RUN_NUMBER}.zip"
           (cd out && zip -r "../$ZIP" .)
           gh release create "$TAG" "$ZIP" --title "ACE-Step music run #${GITHUB_RUN_NUMBER}" --notes "Generated with ACE-Step 1.5 XL Turbo on Kaggle."
           gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload result
-        if: "${{ always() && inputs.wait_for_result }}"
+      - name: Upload diagnostics and outputs
+        if: ${{ always() && inputs.wait_for_result }}
         uses: actions/upload-artifact@v4
-        with: {name: ace-step-music-output, path: out/, if-no-files-found: warn}
+        with:
+          name: ace-step-run-${{ github.run_number }}
+          path: |
+            out/
+            kaggle-result.txt
+          if-no-files-found: warn
