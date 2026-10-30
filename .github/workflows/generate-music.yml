@@ -88,6 +88,18 @@ jobs:
           done
           echo "$result" > kaggle-result.txt
           echo "Kaggle execution result: $result"
+      - name: Stop workflow when Kaggle fails
+        if: ${{ inputs.wait_for_result }}
+        run: |
+          if [ ! -f kaggle-result.txt ]; then
+            echo "::error::Kaggle result file is missing."
+            exit 1
+          fi
+          result="$(cat kaggle-result.txt)"
+          if [ "$result" != "complete" ]; then
+            echo "::error::Kaggle execution ended with status: $result"
+            exit 1
+          fi
       - name: Download Kaggle output and logs
         if: ${{ always() && inputs.wait_for_result }}
         continue-on-error: true
