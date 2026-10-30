@@ -1,4 +1,5 @@
 """Kaggle entry point: load config, run the engine, and persist diagnostics."""
+import base64
 import json
 import logging
 import traceback
@@ -7,7 +8,7 @@ from ace_step_engine import generate
 
 HERE = Path(__file__).resolve().parent
 OUTPUT = Path("/kaggle/working/music-output")
-CONFIG_PATH = HERE / "config.json"
+CONFIG_B64 = "__CONFIG_B64__"
 
 
 def main():
@@ -19,9 +20,7 @@ def main():
                   logging.FileHandler(OUTPUT / "generation.log", encoding="utf-8")])
     logger = logging.getLogger("music-generator")
     try:
-        if not CONFIG_PATH.is_file():
-            raise FileNotFoundError(f"Missing runtime config: {CONFIG_PATH}")
-        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        config = json.loads(base64.b64decode(CONFIG_B64).decode("utf-8"))
         logger.info("Starting ACE-Step job; samples=%s duration=%s",
                     config["num_samples"], config["duration"])
         info = generate(config, OUTPUT)
