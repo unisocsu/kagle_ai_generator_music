@@ -1,0 +1,7 @@
+# Only needed for running kernel/run_music.py on your own machine.
+# On Kaggle the script installs what it needs by itself.
+torch
+transformers
+accelerate
+scipy
+numpy

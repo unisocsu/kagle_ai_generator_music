@@ -1,0 +1,126 @@
+name: Generate music on Kaggle
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "תיאור המוזיקה (באנגלית), למשל: calm acoustic guitar, slow tempo"
+        required: true
+        type: string
+      model:
+        description: "מודל"
+        required: true
+        type: choice
+        default: musicgen-large
+        options:
+          - musicgen-small
+          - musicgen-medium
+          - musicgen-large
+      duration:
+        description: "אורך בשניות (1-30)"
+        required: true
+        type: string
+        default: "15"
+      num_samples:
+        description: "מספר גרסאות (1-5)"
+        required: true
+        type: string
+        default: "1"
+      seed:
+        description: "זרע לשחזור תוצאה, -1 לאקראי"
+        required: true
+        type: string
+        default: "-1"
+      wait_for_result:
+        description: "להמתין לסיום ולהעלות את התוצאה כ-artifact"
+        required: true
+        type: boolean
+        default: true
+      max_wait_minutes:
+        description: "זמן המתנה מקסימלי בדקות"
+        required: true
+        type: string
+        default: "120"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kaggle-music-run
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      KAGGLE_USERNAME: ${{ secrets.kagle_user_name }}
+      KAGGLE_KEY: ${{ secrets.kagle_key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Kaggle CLI
+        run: pip install kaggle
+
+      - name: Check secrets
+        run: |
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            echo "::error::Missing repository secrets. Create kagle_user_name and kagle_key under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Prepare kernel
+        env:
+          IN_PROMPT: ${{ inputs.prompt }}
+          IN_MODEL: ${{ inputs.model }}
+          IN_DURATION: ${{ inputs.duration }}
+          IN_NUM_SAMPLES: ${{ inputs.num_samples }}
+          IN_SEED: ${{ inputs.seed }}
+        run: python scripts/prepare_kernel.py
+
+      - name: Push kernel to Kaggle
+        run: kaggle kernels push -p build/kernel
+
+      - name: Wait for the kernel and download output
+        if: ${{ inputs.wait_for_result }}
+        env:
+          MAX_WAIT_MINUTES: ${{ inputs.max_wait_minutes }}
+        run: |
+          REF="$(cat build/kernel_ref.txt)"
+          MAX_WAIT="${MAX_WAIT_MINUTES:-120}"
+          case "$MAX_WAIT" in ''|*[!0-9]*) MAX_WAIT=120 ;; esac
+          deadline=$(( $(date +%s) + MAX_WAIT * 60 ))
+          result=timeout
+          sleep 45
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            if status="$(kaggle kernels status "$REF" 2>&1)"; then
+              echo "$status"
+              lower="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+              case "$lower" in
+                *complete*) result=complete; break ;;
+                *error*|*cancel*|*fail*) result=failed; break ;;
+              esac
+            else
+              echo "Status check failed (will retry): $status"
+            fi
+            sleep 60
+          done
+          mkdir -p out
+          kaggle kernels output "$REF" -p out || echo "::warning::Could not download the kernel output."
+          case "$result" in
+            complete) echo "Kernel finished." ;;
+            failed) echo "::error::The kernel failed on Kaggle. See the log in the artifact."; exit 1 ;;
+            *) echo "::warning::Timed out waiting. The kernel may still be running on Kaggle."; exit 1 ;;
+          esac
+
+      - name: Upload result
+        if: ${{ always() && inputs.wait_for_result }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-output
+          path: out/
+          if-no-files-found: warn

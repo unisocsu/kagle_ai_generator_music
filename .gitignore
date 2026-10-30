@@ -1,0 +1,28 @@
+# Secrets
+kaggle.json
+.env
+
+# Build output of the workflow
+build/
+out/
+
+# Models and generated audio (never commit these)
+*.wav
+*.mp3
+*.flac
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+models/
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
