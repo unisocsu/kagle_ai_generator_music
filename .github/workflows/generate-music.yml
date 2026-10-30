@@ -55,7 +55,6 @@ jobs:
     timeout-minutes: 360
     env:
       KAGGLE_USERNAME: ${{ secrets.kagle_user_name }}
-      KAGGLE_KEY: ${{ secrets.kagle_key }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,11 +65,25 @@ jobs:
       - name: Install Kaggle CLI
         run: pip install kaggle
 
-      - name: Check secrets
+      - name: Configure Kaggle authentication
+        env:
+          KAGLE_KEY_SECRET: ${{ secrets.kagle_key }}
         run: |
-          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGLE_KEY_SECRET" ]; then
             echo "::error::Missing repository secrets. Create kagle_user_name and kagle_key under Settings > Secrets and variables > Actions."
             exit 1
+          fi
+          mkdir -p "$HOME/.kaggle"
+          if printf '%s' "$KAGLE_KEY_SECRET" | grep -Eq '^[0-9a-f]{32}$'; then
+            # Legacy key (32 hex characters) from kaggle.json
+            KAGGLE_USERNAME="$KAGGLE_USERNAME" KAGGLE_KEY="$KAGLE_KEY_SECRET" python3 -c 'import json, os; print(json.dumps({"username": os.environ["KAGGLE_USERNAME"], "key": os.environ["KAGGLE_KEY"]}))' > "$HOME/.kaggle/kaggle.json"
+            chmod 600 "$HOME/.kaggle/kaggle.json"
+            echo "::notice::Using a legacy Kaggle API key (kaggle.json)"
+          else
+            # New-style API token from kaggle.com/settings/api
+            printf '%s' "$KAGLE_KEY_SECRET" > "$HOME/.kaggle/access_token"
+            chmod 600 "$HOME/.kaggle/access_token"
+            echo "::notice::Using a new-style Kaggle API token (access_token)"
           fi
 
       - name: Prepare kernel
