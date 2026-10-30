@@ -1,185 +1,81 @@
-name: Generate music on Kaggle
-
+name: Generate music on Kaggle (ACE-Step 1.5)
 on:
   workflow_dispatch:
     inputs:
-      prompt:
-        description: "תיאור המוזיקה (באנגלית), למשל: calm acoustic guitar, slow tempo"
-        required: true
-        type: string
-      model:
-        description: "מודל"
+      prompt: {description: "Music description (Hebrew or English)", required: true, type: string}
+      lyrics: {description: "Optional lyrics", required: false, type: string}
+      vocal_language:
+        description: "Vocal language"
         required: true
         type: choice
-        default: musicgen-large
-        options:
-          - musicgen-small
-          - musicgen-medium
-          - musicgen-large
-      duration:
-        description: "אורך בשניות (1-30)"
-        required: true
-        type: string
-        default: "15"
-      num_samples:
-        description: "מספר גרסאות (1-5)"
-        required: true
-        type: string
-        default: "1"
-      seed:
-        description: "זרע לשחזור תוצאה, -1 לאקראי"
-        required: true
-        type: string
-        default: "-1"
-      wait_for_result:
-        description: "להמתין לסיום ולהעלות את התוצאה כ-artifact"
-        required: true
-        type: boolean
-        default: true
-      max_wait_minutes:
-        description: "זמן המתנה מקסימלי בדקות"
-        required: true
-        type: string
-        default: "120"
-
-permissions:
-  contents: write
-
-concurrency:
-  group: kaggle-music-run
-  cancel-in-progress: false
-
+        default: en
+        options: [en, he, es, fr, de, ja, zh, unknown]
+      instrumental: {description: "Instrumental only", required: true, type: boolean, default: false}
+      duration: {description: "Duration in seconds (10-600)", required: true, type: string, default: "30"}
+      num_samples: {description: "Number of versions (1-3)", required: true, type: string, default: "1"}
+      seed: {description: "Seed (-1 random)", required: true, type: string, default: "-1"}
+      wait_for_result: {description: "Wait for Kaggle and publish results", required: true, type: boolean, default: true}
+      max_wait_minutes: {description: "Maximum wait time", required: true, type: string, default: "240"}
+permissions: {contents: write}
+concurrency: {group: kaggle-music-run, cancel-in-progress: false}
 jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    env:
-      KAGGLE_USERNAME: ${{ secrets.kagle_user_name }}
+    env: {KAGGLE_USERNAME: "${{ secrets.kagle_user_name }}"}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
+        with: {python-version: "3.11"}
       - name: Install Kaggle CLI
         run: pip install kaggle
-
       - name: Configure Kaggle authentication
-        env:
-          KAGLE_KEY_SECRET: ${{ secrets.kagle_key }}
+        env: {KAGLE_KEY_SECRET: "${{ secrets.kagle_key }}"}
         run: |
-          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGLE_KEY_SECRET" ]; then
-            echo "::error::Missing repository secrets. Create kagle_user_name and kagle_key under Settings > Secrets and variables > Actions."
-            exit 1
-          fi
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGLE_KEY_SECRET" ]; then echo "::error::Missing Kaggle secrets"; exit 1; fi
           mkdir -p "$HOME/.kaggle"
           if printf '%s' "$KAGLE_KEY_SECRET" | grep -Eq '^[0-9a-f]{32}$'; then
-            # Legacy key (32 hex characters) from kaggle.json
-            KAGGLE_USERNAME="$KAGGLE_USERNAME" KAGGLE_KEY="$KAGLE_KEY_SECRET" python3 -c 'import json, os; print(json.dumps({"username": os.environ["KAGGLE_USERNAME"], "key": os.environ["KAGGLE_KEY"]}))' > "$HOME/.kaggle/kaggle.json"
+            KAGGLE_USERNAME="$KAGGLE_USERNAME" KAGGLE_KEY="$KAGLE_KEY_SECRET" python -c 'import json,os; print(json.dumps({"username":os.environ["KAGGLE_USERNAME"],"key":os.environ["KAGGLE_KEY"]}))' > "$HOME/.kaggle/kaggle.json"
             chmod 600 "$HOME/.kaggle/kaggle.json"
-            echo "::notice::Using a legacy Kaggle API key (kaggle.json)"
           else
-            # New-style API token from kaggle.com/settings/api
-            printf '%s' "$KAGLE_KEY_SECRET" > "$HOME/.kaggle/access_token"
-            chmod 600 "$HOME/.kaggle/access_token"
-            echo "::notice::Using a new-style Kaggle API token (access_token)"
+            printf '%s' "$KAGLE_KEY_SECRET" > "$HOME/.kaggle/access_token"; chmod 600 "$HOME/.kaggle/access_token"
           fi
-
       - name: Prepare kernel
         env:
-          IN_PROMPT: ${{ inputs.prompt }}
-          IN_MODEL: ${{ inputs.model }}
-          IN_DURATION: ${{ inputs.duration }}
-          IN_NUM_SAMPLES: ${{ inputs.num_samples }}
-          IN_SEED: ${{ inputs.seed }}
+          IN_PROMPT: "${{ inputs.prompt }}"
+          IN_LYRICS: "${{ inputs.lyrics }}"
+          IN_VOCAL_LANGUAGE: "${{ inputs.vocal_language }}"
+          IN_INSTRUMENTAL: "${{ inputs.instrumental }}"
+          IN_DURATION: "${{ inputs.duration }}"
+          IN_NUM_SAMPLES: "${{ inputs.num_samples }}"
+          IN_SEED: "${{ inputs.seed }}"
         run: python scripts/prepare_kernel.py
-
-      - name: Check Kaggle credentials (diagnostic)
-        run: |
-          VERSION="$(kaggle --version 2>&1 | head -n 1)"
-          CODE=0
-          OUT="$(kaggle kernels list --mine 2>&1)" || CODE=$?
-          if [ "$CODE" -ne 0 ]; then
-            echo "::warning title=Kaggle credentials check failed ($VERSION)::$(printf '%s' "$OUT" | tr '\n' ' ' | cut -c1-800)"
-          else
-            echo "::notice title=Kaggle credentials check::OK ($VERSION)"
-          fi
-
       - name: Push kernel to Kaggle
+        run: kaggle kernels push -p build/kernel
+      - name: Wait for kernel and download output
+        if: "${{ inputs.wait_for_result }}"
+        env: {MAX_WAIT_MINUTES: "${{ inputs.max_wait_minutes }}"}
         run: |
-          CODE=0
-          OUT="$(kaggle kernels push -p build/kernel 2>&1)" || CODE=$?
-          echo "$OUT"
-          if [ "$CODE" -ne 0 ]; then
-            echo "::error title=Kaggle push failed (exit $CODE)::$(printf '%s' "$OUT" | tr '\n' ' ' | cut -c1-900)"
-            exit "$CODE"
-          fi
-
-      - name: Wait for the kernel and download output
-        if: ${{ inputs.wait_for_result }}
-        env:
-          MAX_WAIT_MINUTES: ${{ inputs.max_wait_minutes }}
-        run: |
-          REF="$(cat build/kernel_ref.txt)"
-          MAX_WAIT="${MAX_WAIT_MINUTES:-120}"
-          case "$MAX_WAIT" in ''|*[!0-9]*) MAX_WAIT=120 ;; esac
-          deadline=$(( $(date +%s) + MAX_WAIT * 60 ))
-          result=timeout
-          sleep 45
+          REF="$(cat build/kernel_ref.txt)"; MAX_WAIT="${MAX_WAIT_MINUTES:-240}"
+          case "$MAX_WAIT" in ''|*[!0-9]*) MAX_WAIT=240;; esac
+          deadline=$(( $(date +%s) + MAX_WAIT * 60 )); result=timeout; sleep 60
           while [ "$(date +%s)" -lt "$deadline" ]; do
-            if status="$(kaggle kernels status "$REF" 2>&1)"; then
-              echo "$status"
-              lower="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
-              case "$lower" in
-                *complete*) result=complete; break ;;
-                *error*|*cancel*|*fail*) result=failed; break ;;
-              esac
-            else
-              echo "Status check failed (will retry): $status"
-            fi
+            status="$(kaggle kernels status "$REF" 2>&1)" || { echo "$status"; sleep 60; continue; }
+            echo "$status"; lower="$(printf '%s' "$status" | tr '[:upper:]' '[:lower:]')"
+            case "$lower" in *complete*) result=complete; break;; *error*|*cancel*|*fail*) result=failed; break;; esac
             sleep 60
           done
-          mkdir -p out
-          kaggle kernels output "$REF" -p out || echo "::warning::Could not download the kernel output."
-          case "$result" in
-            complete) echo "Kernel finished." ;;
-            failed) echo "::error::The kernel failed on Kaggle. See the log in the artifact."; exit 1 ;;
-            *) echo "::warning::Timed out waiting. The kernel may still be running on Kaggle."; exit 1 ;;
-          esac
-
-      - name: Zip the results and publish a release
-        if: ${{ success() && inputs.wait_for_result }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IN_PROMPT: ${{ inputs.prompt }}
-          IN_MODEL: ${{ inputs.model }}
+          mkdir -p out; kaggle kernels output "$REF" -p out || true
+          [ "$result" = complete ] || { echo "::error::Kaggle result: $result"; exit 1; }
+      - name: Publish release
+        if: "${{ success() && inputs.wait_for_result }}"
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: |
-          TAG="music-run-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          ZIP="music_run_${GITHUB_RUN_NUMBER}.zip"
-          (cd out && zip -r "../${ZIP}" .)
-          printf 'Model: %s\n\nPrompt: %s\n' "$IN_MODEL" "$IN_PROMPT" > release_notes.md
-          gh release create "$TAG" "$ZIP" \
-            --title "Music run #${GITHUB_RUN_NUMBER}" \
-            --notes-file release_notes.md \
-            --target "$GITHUB_SHA"
-          URL="$(gh release view "$TAG" --json url --jq .url)"
-          DOWNLOAD="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
-          echo "=============================================="
-          echo "Release page:          $URL"
-          echo "Direct download (zip): $DOWNLOAD"
-          echo "=============================================="
-          {
-            echo "### Music is ready"
-            echo
-            echo "- Release page: $URL"
-            echo "- Direct download (zip): $DOWNLOAD"
-          } >> "$GITHUB_STEP_SUMMARY"
-
+          TAG="ace-step-run-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"; ZIP="ace_step_music_${GITHUB_RUN_NUMBER}.zip"
+          (cd out && zip -r "../$ZIP" .)
+          gh release create "$TAG" "$ZIP" --title "ACE-Step music run #${GITHUB_RUN_NUMBER}" --notes "Generated with ACE-Step 1.5 XL Turbo on Kaggle."
+          gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
       - name: Upload result
-        if: ${{ always() && inputs.wait_for_result }}
+        if: "${{ always() && inputs.wait_for_result }}"
         uses: actions/upload-artifact@v4
-        with:
-          name: music-output
-          path: out/
-          if-no-files-found: warn
+        with: {name: ace-step-music-output, path: out/, if-no-files-found: warn}
