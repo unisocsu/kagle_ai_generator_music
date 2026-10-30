@@ -1,55 +1,58 @@
 # kagle_ai_generator_music
 
-הפקת מוזיקה עם מודלי MusicGen על GPU של Kaggle, בהפעלה מ-GitHub Actions.
-מזינים הנחיות בטופס ה-dispatch, ה-workflow שולח הרצה ל-Kaggle, ממתין לסיום ומעלה את קבצי ה-WAV כ-artifact.
+הפקת מוזיקה באמצעות **ACE-Step 1.5 XL Turbo** על GPU של Kaggle, בהפעלה דרך GitHub Actions.
+
+## ארכיטקטורה
+
+1. **GitHub Actions** – קבלת פרמטרים, אימות Kaggle, שליחת Kernel, מעקב והורדת תוצרים גם במקרה כישלון.
+2. **Kernel package** – חבילת הריצה שנשלחת ל-Kaggle: הגדרות JSON, נקודת כניסה ומנוע.
+3. **ACE-Step engine** – התקנת המנוע, טעינת המודלים והפקת WAV.
+
+```
+.github/workflows/generate-music.yml  # תזמור CI
+scripts/prepare_kernel.py             # אימות ובניית חבילת Kaggle
+kernel/run_music.py                   # נקודת כניסה, לוגים וטיפול בשגיאות
+kernel/ace_step_engine.py             # טעינת מודלים והפקת מוזיקה
+```
+
+ההגדרות נשלחות כ-`config.json` נפרד ולא מוזרקות לתוך קוד Python.
 
 ## הגדרה חד-פעמית
 
-ב-GitHub: Settings → Secrets and variables → Actions → New repository secret. צריך שני סודות:
+ב-GitHub: Settings → Secrets and variables → Actions:
 
-| שם | תוכן |
+| Secret | תוכן |
 |---|---|
-| `kagle_key` | מפתח ה-API של Kaggle (השדה `key` בקובץ `kaggle.json`) |
-| `kagle_user_name` | שם המשתמש ב-Kaggle (השדה `username`) |
+| `kagle_key` | מפתח API של Kaggle |
+| `kagle_user_name` | שם המשתמש ב-Kaggle |
 
-הערות:
-- שמות סודות מכילים רק אותיות, ספרות וקו תחתון (אין מקף), ואינם תלויים באותיות גדולות או קטנות.
-- בחשבון ה-Kaggle צריך שאפשר יהיה להפעיל Internet בנוטבוקים (דורש אימות טלפון), כדי שההרצה תוכל להוריד את המודל.
+יש לאפשר Internet ב-Kaggle כדי להוריד את קוד ACE-Step ואת משקלי המודלים.
 
 ## הפעלה
 
-Actions → **Generate music on Kaggle** → Run workflow, ואז ממלאים:
+Actions → **Generate music on Kaggle (ACE-Step 1.5)** → Run workflow.
 
 | שדה | משמעות | ברירת מחדל |
 |---|---|---|
-| `prompt` | תיאור המוזיקה, באנגלית | חובה |
-| `model` | `musicgen-small` / `musicgen-medium` / `musicgen-large` | `musicgen-large` |
-| `duration` | אורך בשניות (1-30) | 15 |
-| `num_samples` | כמה גרסאות להפיק (1-5) | 1 |
-| `seed` | זרע לשחזור תוצאה, `-1` לאקראי | -1 |
-| `wait_for_result` | להמתין לסיום ולהוריד את התוצאה | כן |
-| `max_wait_minutes` | זמן המתנה מקסימלי | 120 |
+| `prompt` | תיאור מוזיקה בעברית או באנגלית | חובה |
+| `lyrics` | מילים לשירה | ריק |
+| `vocal_language` | שפת השירה | en |
+| `instrumental` | אינסטרומנטלי בלבד | false |
+| `duration` | אורך בשניות (10–600) | 30 |
+| `num_samples` | מספר גרסאות (1–3) | 1 |
+| `seed` | זרע קבוע או ‎-1 לאקראי | -1 |
+| `wait_for_result` | להמתין, להוריד ולפרסם תוצאות | true |
+| `max_wait_minutes` | זמן המתנה מרבי | 240 |
 
-## תוצאות
+## תוצרים ואבחון
 
-- אחרי שהרצה מצליחה: ה-workflow אורז את הכול ל-zip ומפרסם **Release** חדש (`music-run-<מספר>`). הקישור לעמוד ה-Release ולהורדה ישירה מודפס בלוג של שלב **Zip the results and publish a release**, ובסיכום ההרצה (Summary). ה-zip כולל את קבצי ה-WAV, לוג ו-`run_info.json`.
-- גיבוי: הקבצים מועלים גם כ-artifact בשם `music-output` (נשמר לזמן מוגבל), גם כשההרצה נכשלה.
-- אם הריפו ציבורי, גם ה-Releases ציבוריים. כדי שהמוזיקה תישאר פרטית, הגדר את הריפו כ-Private.
-- ה-workflow זקוק להרשאת כתיבה ל-contents (מוגדר בקובץ). אם ההרצה נכשלת ביצירת ה-Release, בדוק ב-Settings → Actions → General → Workflow permissions.
-- אם כיבית את `wait_for_result`, ההרצה ממשיכה ב-Kaggle והתוצאות יהיו בנוטבוק הפרטי `kagle-ai-music-generator` בחשבון שלך.
+- WAV ו-`run_info.json` מתפרסמים ב-Release רק אם קיימים קובצי WAV.
+- Artifact בשם `ace-step-run-<run>` נשמר גם כאשר Kaggle נכשל, ככל שפלט זמין.
+- `generation.log` נשמר במהלך הריצה; `failure.txt` נכתב במקרה של חריגה.
+- סטטוס Kaggle נשמר ב-`kaggle-result.txt`.
 
 ## הערות
 
-- MusicGen מבין תיאורים באנגלית בלבד.
-- המודל אומן על קטעים של עד 30 שניות.
-- כל הרצה נספרת במכסת ה-GPU השבועית ב-Kaggle, וטוענת את המודל מחדש.
-- מתבצעת הרצה אחת בכל פעם (ההרצות הבאות ממתינות בתור).
-
-## מבנה הריפו
-
-```
-.github/workflows/generate-music.yml   # ה-workflow עם workflow_dispatch
-scripts/prepare_kernel.py              # בדיקת הקלט ובניית תיקיית הנוטבוק
-kernel/run_music.py                    # הקוד שרץ בתוך Kaggle
-requirements.txt                       # להרצה מקומית בלבד
-```
+- `enable_gpu=true` מבקש GPU מ-Kaggle; סוג המאיץ ומספר הכרטיסים בפועל נקבעים בצד Kaggle.
+- שתי יחידות T4 אינן מאוחדות לזיכרון GPU יחיד.
+- בכל ריצה חדשה ייתכן ש-Kaggle יוריד ויטען מחדש את משקלי המודל.
