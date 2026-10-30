@@ -82,8 +82,26 @@ jobs:
           IN_SEED: ${{ inputs.seed }}
         run: python scripts/prepare_kernel.py
 
+      - name: Check Kaggle credentials (diagnostic)
+        run: |
+          VERSION="$(kaggle --version 2>&1 | head -n 1)"
+          CODE=0
+          OUT="$(kaggle kernels list --mine 2>&1)" || CODE=$?
+          if [ "$CODE" -ne 0 ]; then
+            echo "::warning title=Kaggle credentials check failed ($VERSION)::$(printf '%s' "$OUT" | tr '\n' ' ' | cut -c1-800)"
+          else
+            echo "::notice title=Kaggle credentials check::OK ($VERSION)"
+          fi
+
       - name: Push kernel to Kaggle
-        run: kaggle kernels push -p build/kernel
+        run: |
+          CODE=0
+          OUT="$(kaggle kernels push -p build/kernel 2>&1)" || CODE=$?
+          echo "$OUT"
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error title=Kaggle push failed (exit $CODE)::$(printf '%s' "$OUT" | tr '\n' ' ' | cut -c1-900)"
+            exit "$CODE"
+          fi
 
       - name: Wait for the kernel and download output
         if: ${{ inputs.wait_for_result }}
