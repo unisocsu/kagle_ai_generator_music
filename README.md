@@ -32,7 +32,10 @@ Actions → **Generate music on Kaggle** → Run workflow, ואז ממלאים:
 
 ## תוצאות
 
-- אחרי שההרצה מסתיימת: בעמוד ה-run תחת **Artifacts**, הקובץ `music-output` (קבצי WAV, לוג ו-`run_info.json`).
+- אחרי שהרצה מצליחה: ה-workflow אורז את הכול ל-zip ומפרסם **Release** חדש (`music-run-<מספר>`). הקישור לעמוד ה-Release ולהורדה ישירה מודפס בלוג של שלב **Zip the results and publish a release**, ובסיכום ההרצה (Summary). ה-zip כולל את קבצי ה-WAV, לוג ו-`run_info.json`.
+- גיבוי: הקבצים מועלים גם כ-artifact בשם `music-output` (נשמר לזמן מוגבל), גם כשההרצה נכשלה.
+- אם הריפו ציבורי, גם ה-Releases ציבוריים. כדי שהמוזיקה תישאר פרטית, הגדר את הריפו כ-Private.
+- ה-workflow זקוק להרשאת כתיבה ל-contents (מוגדר בקובץ). אם ההרצה נכשלת ביצירת ה-Release, בדוק ב-Settings → Actions → General → Workflow permissions.
 - אם כיבית את `wait_for_result`, ההרצה ממשיכה ב-Kaggle והתוצאות יהיו בנוטבוק הפרטי `kagle-ai-music-generator` בחשבון שלך.
 
 ## הערות

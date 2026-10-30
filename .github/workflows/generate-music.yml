@@ -43,7 +43,7 @@ on:
         default: "120"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: kaggle-music-run
@@ -116,6 +116,34 @@ jobs:
             failed) echo "::error::The kernel failed on Kaggle. See the log in the artifact."; exit 1 ;;
             *) echo "::warning::Timed out waiting. The kernel may still be running on Kaggle."; exit 1 ;;
           esac
+
+      - name: Zip the results and publish a release
+        if: ${{ success() && inputs.wait_for_result }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IN_PROMPT: ${{ inputs.prompt }}
+          IN_MODEL: ${{ inputs.model }}
+        run: |
+          TAG="music-run-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          ZIP="music_run_${GITHUB_RUN_NUMBER}.zip"
+          (cd out && zip -r "../${ZIP}" .)
+          printf 'Model: %s\n\nPrompt: %s\n' "$IN_MODEL" "$IN_PROMPT" > release_notes.md
+          gh release create "$TAG" "$ZIP" \
+            --title "Music run #${GITHUB_RUN_NUMBER}" \
+            --notes-file release_notes.md \
+            --target "$GITHUB_SHA"
+          URL="$(gh release view "$TAG" --json url --jq .url)"
+          DOWNLOAD="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
+          echo "=============================================="
+          echo "Release page:          $URL"
+          echo "Direct download (zip): $DOWNLOAD"
+          echo "=============================================="
+          {
+            echo "### Music is ready"
+            echo
+            echo "- Release page: $URL"
+            echo "- Direct download (zip): $DOWNLOAD"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload result
         if: ${{ always() && inputs.wait_for_result }}
