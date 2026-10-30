@@ -18,8 +18,12 @@ def main():
  print("CUDA devices:",torch.cuda.device_count(),flush=True)
  for i in range(torch.cuda.device_count()): print(f"GPU {i}: {torch.cuda.get_device_name(i)} / {torch.cuda.get_device_properties(i).total_memory/1024**3:.1f} GiB",flush=True)
  dit=AceStepHandler(); llm=LLMHandler()
- dit.initialize_service(project_root=str(ROOT),config_path="acestep-v15-xl-turbo",device="cuda",offload_to_cpu=True)
- llm.initialize(checkpoint_dir=str(CKPT),lm_model_path="acestep-5Hz-lm-1.7B",backend="pt",device="cuda")
+ status, ok = dit.initialize_service(project_root=str(ROOT),config_path="acestep-v15-xl-turbo",device="cuda",offload_to_cpu=True,offload_dit_to_cpu=True,quantization="int8_weight_only",use_mlx_dit=False)
+ if not ok: raise RuntimeError(f"DiT initialization failed: {status}")
+ print(status,flush=True)
+ status, ok = llm.initialize(checkpoint_dir=str(CKPT),lm_model_path="acestep-5Hz-lm-1.7B",backend="pt",device="cuda",offload_to_cpu=True)
+ if not ok: raise RuntimeError(f"LM initialization failed: {status}")
+ print(status,flush=True)
  files=[]
  for i in range(CONFIG["num_samples"]):
   seed=CONFIG["seed"]+i if CONFIG["seed"]>=0 else -1
