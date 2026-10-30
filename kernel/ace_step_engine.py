@@ -16,7 +16,8 @@ def generate(config, output_dir):
     output_dir.mkdir(parents=True, exist_ok=True)
     _run(["git", "clone", "--depth", "1", "https://github.com/ACE-Step/ACE-Step-1.5.git", str(root)])
     # Kaggle images may not include the PEP 517 backend required by ACE-Step.
-    _run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel", "hatchling"])
+    # Keep setuptools compatible with the Kaggle image PyTorch build (requires <82).
+    _run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "wheel", "hatchling", "setuptools<82"])
     _run([sys.executable, "-m", "pip", "install", "-e", ".", "--no-build-isolation"], cwd=root)
     _run([sys.executable, "-m", "acestep.model_downloader"], cwd=root)
     from huggingface_hub import snapshot_download
