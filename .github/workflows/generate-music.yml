@@ -61,7 +61,7 @@ jobs:
           IN_SEED: ${{ inputs.seed }}
         run: python scripts/prepare_kernel.py
       - name: Submit kernel to Kaggle
-        run: kaggle kernels push -p build/kernel
+        run: kaggle kernels push -p build/kernel --accelerator NvidiaTeslaT4
       - name: Wait for Kaggle execution
         if: ${{ inputs.wait_for_result }}
         env:
