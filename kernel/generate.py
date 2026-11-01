@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 DIT_NAME = "acestep-v15-xl-turbo"
@@ -166,7 +167,60 @@ def install_audio_code_offload_patch(handler):
             log("[offload] Tokenizer quantizer + detokenizer returned to CPU")
 
     handler._decode_audio_codes_to_latents = types.MethodType(decode_audio_codes_cpu_offload, handler)
-    log("[offload] Installed targeted audio-code CPU-offload patch")
+
+    # The 4B XL DiT in FP32 cannot fit entirely in a single 15 GiB Tesla T4.
+    # Keep its weights on CPU and stream the currently executing modules to
+    # CUDA through Accelerate hooks. This is installed lazily on entry to the
+    # first model context, after audio-code decoding has completed.
+    original_load_context = handler._load_model_context
+    offload_state = {"installed": False}
+
+    @contextmanager
+    def cpu_offload_model_context(self, model_name):
+        if model_name != "model":
+            with original_load_context(model_name):
+                yield
+            return
+
+        if not offload_state["installed"]:
+            from accelerate import cpu_offload
+
+            gpu = torch.device(self.device)
+            cuda_resident = [
+                name for name, parameter in self.model.named_parameters()
+                if parameter.device.type not in ("cpu", "meta")
+            ]
+            if cuda_resident:
+                raise RuntimeError(
+                    "Layerwise CPU offload expected the DiT on CPU before hook installation; "
+                    f"found CUDA parameters, e.g. {cuda_resident[:5]}"
+                )
+
+            log("[offload] Installing Accelerate layerwise CPU offload for the full DiT")
+            log("[offload] DiT weights stay in system RAM; active modules stream to GPU 0")
+            self.model = cpu_offload(
+                self.model,
+                execution_device=gpu,
+                offload_buffers=True,
+                preload_module_classes=["AceStepEncoderLayer", "AceStepDiTLayer"],
+            )
+            offload_state["installed"] = True
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            log("[offload] Accelerate hooks installed; full-model .to(cuda) is disabled")
+
+        # Do not call the upstream _load_model_context("model"): it performs
+        # model.to(cuda) on the entire 4B model and causes the reported OOM.
+        try:
+            yield
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+            log("[offload] Layerwise DiT context finished; weights remain CPU-offloaded")
+
+    handler._load_model_context = types.MethodType(cpu_offload_model_context, handler)
+    log("[offload] Installed targeted audio-code + layerwise DiT CPU-offload patches")
 
 
 
