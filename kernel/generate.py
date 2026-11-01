@@ -204,10 +204,24 @@ def install_audio_code_offload_patch(handler):
                 offload_buffers=True,
                 preload_module_classes=["AceStepEncoderLayer", "AceStepDiTLayer"],
             )
+            meta_parameters = sum(
+                1 for parameter in self.model.parameters()
+                if parameter.device.type == "meta"
+            )
+            if meta_parameters == 0:
+                raise RuntimeError(
+                    "Accelerate CPU offload did not place DiT parameters on meta; "
+                    "refusing to continue with a full-GPU model load."
+                )
             offload_state["installed"] = True
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            log("[offload] Accelerate hooks installed; full-model .to(cuda) is disabled")
+                free_bytes, total_bytes = torch.cuda.mem_get_info(gpu)
+                log(
+                    f"[offload] Hooks installed for {meta_parameters} parameters; "
+                    f"GPU free={free_bytes / 1024**3:.2f}/{total_bytes / 1024**3:.2f} GiB"
+                )
+            log("[offload] Full-model .to(cuda) is disabled; modules will stream layer-by-layer")
 
         # Do not call the upstream _load_model_context("model"): it performs
         # model.to(cuda) on the entire 4B model and causes the reported OOM.
