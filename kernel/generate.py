@@ -223,6 +223,64 @@ def install_audio_code_offload_patch(handler):
                 )
             log("[offload] Full-model .to(cuda) is disabled; modules will stream layer-by-layer")
 
+            # ACE-Step's turbo diffusion loop does not log inside its 8
+            # decoder passes. Add lightweight timing hooks so a long CPU/GPU
+            # transfer is distinguishable from a deadlock in future runs.
+            if not offload_state.get("progress_hooks"):
+                decoder = self.model.decoder
+                original_decoder_forward = decoder.forward
+                progress_state = {"pass": 0}
+
+                def traced_decoder_forward(module, *args, **kwargs):
+                    progress_state["pass"] += 1
+                    pass_number = progress_state["pass"]
+                    started = time.monotonic()
+                    log(f"[progress] DiT pass {pass_number} started")
+                    try:
+                        result = original_decoder_forward(*args, **kwargs)
+                        torch.cuda.synchronize(gpu)
+                        log(
+                            f"[progress] DiT pass {pass_number} completed "
+                            f"in {time.monotonic() - started:.1f}s"
+                        )
+                        return result
+                    except BaseException as exc:
+                        log(
+                            f"[progress] DiT pass {pass_number} failed after "
+                            f"{time.monotonic() - started:.1f}s: {type(exc).__name__}: {exc}"
+                        )
+                        raise
+
+                decoder.forward = types.MethodType(traced_decoder_forward, decoder)
+                layers = list(decoder.layers)
+                for layer_index, layer in enumerate(layers):
+                    layer_state = {"started": None}
+
+                    def layer_pre_hook(
+                        module, inputs, index=layer_index, state=layer_state
+                    ):
+                        state["started"] = time.monotonic()
+                        log(
+                            f"[progress] Pass {progress_state['pass']} "
+                            f"DiT layer {index + 1}/{len(layers)} started"
+                        )
+
+                    def layer_post_hook(
+                        module, inputs, output, index=layer_index, state=layer_state
+                    ):
+                        started_at = state.get("started")
+                        elapsed = time.monotonic() - started_at if started_at is not None else 0.0
+                        log(
+                            f"[progress] Pass {progress_state['pass']} "
+                            f"DiT layer {index + 1}/{len(layers)} completed in {elapsed:.1f}s"
+                        )
+
+                    layer.register_forward_pre_hook(layer_pre_hook, prepend=True)
+                    layer.register_forward_hook(layer_post_hook)
+
+                offload_state["progress_hooks"] = True
+                log(f"[progress] Installed timing hooks on {len(layers)} DiT layers")
+
         # Do not call the upstream _load_model_context("model"): it performs
         # model.to(cuda) on the entire 4B model and causes the reported OOM.
         try:
