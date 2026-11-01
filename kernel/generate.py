@@ -61,30 +61,61 @@ def download_models(root):
 
 
 def init_dit(root, AceStepHandler):
-    attempts = [
-        {"offload_to_cpu": True, "offload_dit_to_cpu": True, "quantization": "int8_weight_only"},
-        {"offload_to_cpu": True, "offload_dit_to_cpu": True, "quantization": None},
-    ]
-    last = "no attempt made"
-    for number, extra in enumerate(attempts, 1):
-        handler = AceStepHandler()
-        base = {"project_root": str(root), "config_path": DIT_NAME, "device": "cuda"}
-        try:
-            kwargs = accepted(handler.initialize_service, {**base, **extra}, "initialize_service")
-            log(f"== DiT init attempt {number}: {kwargs}")
-            status, ok = handler.initialize_service(**kwargs)
-            log(status)
-            if ok:
-                return handler
-            last = str(status)
-        except Exception:
-            last = traceback.format_exc()
-            log(last)
+    # Tesla T4 is a pre-Ampere GPU. ACE-Step's normal CUDA dtype selection
+    # chooses float16 on this hardware, which can overflow during XL-Turbo
+    # diffusion and produce NaN latents. Override the actual loader dtype;
+    # ACESTEP_DTYPE is not read by ACE-Step's CUDA initialization path.
+    import torch
+
+    handler = AceStepHandler()
+    original_loader = handler._load_main_model_from_checkpoint
+
+    def load_main_model_float32(**kwargs):
+        handler.dtype = torch.float32
+        log("[precision] Forcing DiT and dependent components to torch.float32")
+        result = original_loader(**kwargs)
+        for parameter in handler.model.parameters():
+            if parameter.is_floating_point():
+                if parameter.dtype != torch.float32:
+                    raise RuntimeError(
+                        f"Float32 precision override failed: first floating model parameter "
+                        f"has dtype {parameter.dtype}"
+                    )
+                break
+        else:
+            raise RuntimeError("Float32 precision verification failed: model has no floating parameters")
+        log("[precision] Verified DiT floating parameters are torch.float32")
+        return result
+
+    # initialize_service calls this instance method after choosing its
+    # default dtype. Replacing the loader ensures the override happens
+    # immediately before from_pretrained and remains active for VAE loading.
+    handler._load_main_model_from_checkpoint = load_main_model_float32
+
+    base = {
+        "project_root": str(root),
+        "config_path": DIT_NAME,
+        "device": "cuda",
+        "offload_to_cpu": True,
+        "offload_dit_to_cpu": True,
+        "quantization": None,
+    }
+    kwargs = accepted(handler.initialize_service, base, "initialize_service")
+    log(f"== DiT init (forced float32, CPU offload, no quantization): {kwargs}")
+    try:
+        status, ok = handler.initialize_service(**kwargs)
+        log(status)
+        if not ok:
+            raise RuntimeError(f"DiT initialization failed: {status}")
+        if handler.dtype != torch.float32:
+            raise RuntimeError(f"ACE-Step reverted dtype after initialization: {handler.dtype}")
+        return handler
+    except Exception:
+        log(traceback.format_exc())
         del handler
         gc.collect()
-        import torch
         torch.cuda.empty_cache()
-    raise RuntimeError(f"DiT initialization failed: {last}")
+        raise
 
 
 def init_lm(ckpt, LLMHandler):
