@@ -118,6 +118,58 @@ def init_dit(root, AceStepHandler):
         raise
 
 
+
+def install_audio_code_offload_patch(handler):
+    """Decode LM audio codes without moving the full DiT to GPU.
+
+    The normal _load_model_context("model") path transfers the entire 4B
+    DiT to CUDA. Audio-code decoding only needs the small tokenizer
+    quantizer and detokenizer, so move those two modules temporarily.
+    """
+    import types
+    import torch
+
+    def decode_audio_codes_cpu_offload(self, code_str):
+        if self.model is None or not hasattr(self.model, "tokenizer") or not hasattr(self.model, "detokenizer"):
+            return None
+
+        code_ids = self._parse_audio_code_string(code_str)
+        if not code_ids:
+            return None
+
+        quantizer = self.model.tokenizer.quantizer
+        detokenizer = self.model.detokenizer
+        device = torch.device(self.device)
+        dtype = self.dtype
+
+        log("[offload] Audio-code decode: moving only tokenizer.quantizer + detokenizer to CUDA")
+        try:
+            quantizer.to(device=device, dtype=dtype)
+            detokenizer.to(device=device, dtype=dtype)
+            with torch.inference_mode():
+                indices = torch.tensor(code_ids, device=device, dtype=torch.long)
+                indices = indices.unsqueeze(0).unsqueeze(-1)
+                quantized = quantizer.get_output_from_indices(indices)
+                if quantized.dtype != dtype:
+                    quantized = quantized.to(dtype)
+                result = detokenizer(quantized)
+                log(f"[offload] Audio-code decode complete; latent shape={tuple(result.shape)}")
+                return result
+        finally:
+            # Keep the large DiT and its audio-code components on CPU between
+            # operations. The returned latent tensor remains on CUDA for the
+            # subsequent generation step.
+            quantizer.to("cpu")
+            detokenizer.to("cpu")
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            log("[offload] Tokenizer quantizer + detokenizer returned to CPU")
+
+    handler._decode_audio_codes_to_latents = types.MethodType(decode_audio_codes_cpu_offload, handler)
+    log("[offload] Installed targeted audio-code CPU-offload patch")
+
+
+
 def init_lm(ckpt, LLMHandler):
     handler = LLMHandler()
     base = {"checkpoint_dir": str(ckpt), "lm_model_path": LM_NAME,
@@ -155,6 +207,7 @@ def main():
     from acestep.inference import GenerationParams, GenerationConfig, generate_music
 
     dit = init_dit(root, AceStepHandler)
+    install_audio_code_offload_patch(dit)
     llm, llm_ok = init_lm(ckpt, LLMHandler)
 
     lyrics = "[Instrumental]" if config["instrumental"] and not config["lyrics"] else config["lyrics"]
