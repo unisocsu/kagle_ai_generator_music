@@ -68,8 +68,14 @@ def main():
 
         if not REPO.exists():
             run(["git", "clone", "--depth", "1", "https://github.com/ACE-Step/ACE-Step-1.5.git", REPO])
+        # Kaggle's Tesla T4 is a pre-Ampere GPU. ACE-Step can overflow
+        # FP16 during XL-Turbo diffusion on this architecture, producing NaN
+        # latents. Force float32 for stable generation; model offload remains
+        # enabled below to keep GPU memory usage manageable.
         env = dict(os.environ, UV_CACHE_DIR=str(WORK / "uv-cache"), UV_LINK_MODE="copy",
-                   PYTHONUNBUFFERED="1", HF_HOME=str(WORK / "hf"), PYTHONPATH=str(REPO))
+                   PYTHONUNBUFFERED="1", HF_HOME=str(WORK / "hf"), PYTHONPATH=str(REPO),
+                   ACESTEP_DTYPE="float32")
+        emit("ACE-Step precision override: ACESTEP_DTYPE=float32 (Tesla T4 compatibility)")
         run(uv + ["sync", "--python", PYTHON_VERSION], cwd=REPO, env=env)
 
         engine = WORK / "generate.py"
