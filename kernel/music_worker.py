@@ -46,32 +46,24 @@ def download_models(root):
 
     checkpoints = root / "checkpoints"
     checkpoints.mkdir(parents=True, exist_ok=True)
-    log("== Preparing ACE-Step checkpoints")
+    log("== Preparing only the selected persistent-worker checkpoints")
 
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "acestep.model_downloader"],
-            cwd=root,
-            check=True,
-        )
-    except Exception as exc:
-        log("[warn] Default checkpoint downloader failed; checking individual components:", exc)
-
-    shared = ("vae", "Qwen3-Embedding-0.6B")
-    missing_shared = [name for name in shared if not (checkpoints / name).exists()]
-    if missing_shared:
-        log("[download] Fetching shared components:", missing_shared)
-        snapshot_download(
-            repo_id="ACE-Step/Ace-Step1.5",
-            local_dir=str(checkpoints),
-            allow_patterns=[f"{name}/**" for name in missing_shared],
-        )
+    # Avoid the default model_downloader because it also fetches the 1.7B
+    # planner. This worker deliberately uses the smaller 0.6B planner.
+    snapshot_download(
+        repo_id="ACE-Step/Ace-Step1.5",
+        local_dir=str(checkpoints),
+        allow_patterns=["vae/**", "Qwen3-Embedding-0.6B/**"],
+    )
 
     for name in (DIT_NAME, LM_NAME):
         target = checkpoints / name
         if not target.exists() or not any(target.iterdir()):
-            log("[download] Fetching", name)
-            snapshot_download(repo_id=f"ACE-Step/{name}", local_dir=str(target))
+            log("[download] Fetching selected component:", name)
+            snapshot_download(
+                repo_id=f"ACE-Step/{name}",
+                local_dir=str(target),
+            )
 
     return checkpoints
 
