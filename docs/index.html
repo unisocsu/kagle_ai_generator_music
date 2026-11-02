@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10131b">
+<title>ACE-Step · מחולל מוזיקה</title>
+<style>
+:root{color-scheme:dark;--bg:#10131b;--panel:#181e2b;--panel2:#20283a;--line:#2c3549;--text:#edf1fa;--muted:#9da9bf;--accent:#8b9cff;--accent2:#6b7be8;--green:#55d6a2;--red:#ff7885;--amber:#f3c46e}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 20% 0%,#252e4b 0%,var(--bg) 45%);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;min-height:100vh}
+button,input,textarea,select{font:inherit}
+button{border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:11px;padding:10px 15px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:wait}
+button.primary{background:linear-gradient(135deg,var(--accent2),#5967c9);border-color:transparent;color:white;font-weight:700}
+button.danger{border-color:#793b4c;color:#ffacb4}
+header{max-width:1240px;margin:auto;padding:20px 24px 10px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:44px;height:44px;border-radius:15px;background:linear-gradient(135deg,#a9b7ff,#665ee9);display:grid;place-items:center;font-size:22px;box-shadow:0 8px 25px #0005}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);font-size:13px}
+.header-spacer{flex:1}
+.pill{border:1px solid var(--line);border-radius:99px;padding:6px 11px;display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;background:#11172399}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.dot.online{background:var(--green);box-shadow:0 0 10px #55d6a288}
+.dot.offline{background:#7b8498}
+main{max-width:1240px;margin:12px auto 42px;padding:0 24px;display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+.panel{background:linear-gradient(180deg,#1b2231f5,#171d29f5);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 45px #0003;overflow:hidden}
+.panel-head{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.panel-head h2{font-size:16px;margin:0;flex:1}
+.panel-body{padding:18px}
+label{display:block;color:var(--muted);font-size:13px;margin:0 0 7px}
+textarea,input,select{width:100%;background:#111722;border:1px solid var(--line);border-radius:11px;padding:11px 12px;color:var(--text);outline:none}
+textarea:focus,input:focus,select:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:112px}
+.field{margin-bottom:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.inline{display:flex;gap:9px;align-items:center}
+.inline input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.inline label{margin:0;color:var(--text)}
+.mini{font-size:12px;color:var(--muted);margin-top:6px}
+.actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.warning{font-size:12px;color:#e8c987;background:#332b1c;border:1px solid #5d4c2b;padding:10px 12px;border-radius:10px;margin-top:14px}
+.worker-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.worker-info{font-size:13px;color:var(--muted);margin-top:10px;min-height:22px}
+.job-list{display:flex;flex-direction:column;gap:10px}
+.job{background:#111722;border:1px solid var(--line);border-radius:13px;padding:13px}
+.job-top{display:flex;gap:8px;align-items:flex-start}
+.job-title{font-weight:650;flex:1;overflow-wrap:anywhere}
+.status{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:3px 8px;color:var(--muted);white-space:nowrap}
+.status.complete{color:var(--green);border-color:#2e6c57}
+.status.failed{color:var(--red);border-color:#713d4a}
+.job-meta{font-size:12px;color:var(--muted);margin-top:5px}
+.job-message{font-size:13px;margin-top:7px;color:#c7d0e1}
+.job audio{width:100%;margin-top:10px;height:38px}
+.job a{display:inline-block;color:#b7c2ff;margin-top:8px;font-size:13px}
+.empty{color:var(--muted);text-align:center;padding:28px 12px}
+footer{max-width:1240px;margin:auto;padding:0 24px 28px;color:var(--muted);font-size:12px}
+dialog{width:min(520px,calc(100vw - 24px));background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:20px}
+dialog::backdrop{background:#05070cbb}
+dialog h2{margin:0 0 14px;font-size:17px}
+dialog .field{margin-bottom:12px}
+dialog p{font-size:13px;color:var(--muted)}
+.dialog-actions{display:flex;justify-content:flex-start;gap:8px;margin-top:14px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#252d40;color:white;border:1px solid #55617d;padding:10px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;z-index:5}
+#toast.show{opacity:1}
+@media(max-width:850px){main{grid-template-columns:1fr}header{padding:16px}main{padding:0 14px}footer{padding:0 14px 24px}.header-spacer{min-width:8px}}
+@media(max-width:480px){.row{grid-template-columns:1fr}header{gap:8px}.brand .sub{display:none}.pill{font-size:11px}.panel-body{padding:14px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">♫</div>
+    <div><h1>ACE-Step Music Studio</h1><div class="sub">יצירת מוזיקה · Worker מתמשך על Kaggle</div></div>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="pill" title="מצב ה-Worker"><span id="statusDot" class="dot offline"></span><span id="statusText">לא מחובר</span></div>
+  <button id="settingsBtn" aria-label="הגדרות">⚙ הגדרות</button>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-head"><h2>יצירת שיר חדש</h2><span class="sub">ACE-Step Turbo · 8 צעדי דיפוזיה</span></div>
+    <div class="panel-body">
+      <form id="musicForm">
+        <div class="field">
+          <label for="prompt">תיאור המוזיקה</label>
+          <textarea id="prompt" maxlength="512" required placeholder="לדוגמה: קטע פופ שמח, פסנתר מוביל, תופים חיים וגיטרות, קצב בינוני ומנגינה קליטה"></textarea>
+          <div class="mini"><span id="promptCount">0</span>/512 תווים</div>
+        </div>
+        <div class="field">
+          <label for="lyrics">מילים לשיר (אופציונלי)</label>
+          <textarea id="lyrics" maxlength="4096" placeholder="אפשר להשאיר ריק ליצירה אינסטרומנטלית או לתת למודל להפיק בהתאם לתיאור."></textarea>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="duration">משך (שניות)</label>
+            <input id="duration" type="number" min="10" max="180" value="30" required>
+          </div>
+          <div class="field">
+            <label for="language">שפת השירה</label>
+            <select id="language">
+              <option value="he">עברית</option><option value="en" selected>אנגלית</option><option value="es">ספרדית</option><option value="fr">צרפתית</option><option value="de">גרמנית</option><option value="ja">יפנית</option><option value="zh">סינית</option><option value="unknown">לא ידועה</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="seed">Seed (-1 לאקראי)</label>
+            <input id="seed" type="number" min="-1" value="-1">
+          </div>
+          <div class="field" style="display:flex;align-items:end;padding-bottom:7px">
+            <div class="inline"><input id="instrumental" type="checkbox"><label for="instrumental">אינסטרומנטלי בלבד</label></div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="submitBtn" type="submit">♫ הוסף לתור היצירה</button>
+          <button id="refreshBtn" type="button">רענן תור</button>
+        </div>
+        <div class="warning">היצירות, התיאורים והתגובות נשמרים ב־GitHub Issues ובריליסים של הריפו. הריפו ציבורי, לכן אל תכניס לכאן מידע אישי או סודי.</div>
+      </form>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="panel-head"><h2>Worker ותור בקשות</h2><span id="queueCount" class="sub">0 בקשות</span></div>
+    <div class="panel-body">
+      <div class="worker-controls">
+        <button id="startBtn" class="primary" type="button">הפעל Worker</button>
+        <button id="stopBtn" class="danger" type="button">עצור Worker</button>
+      </div>
+      <div id="workerInfo" class="worker-info">התחבר בהגדרות כדי לבדוק את מצב ה־Worker.</div>
+      <div style="height:1px;background:var(--line);margin:16px 0"></div>
+      <div id="jobs" class="job-list"><div class="empty">הבקשות שלך יופיעו כאן.</div></div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  Worker אחד מעבד בקשות ברצף ומשאיר את מודל ה־2B טעון בזיכרון. הוא נכבה אחרי זמן חוסר פעילות או בגבול זמן/מכסה של Kaggle. כדי ליצור שירים נוספים לאחר כיבוי, מפעילים אותו שוב.
+</footer>
+
+<dialog id="settings">
+  <h2>הגדרות חיבור</h2>
+  <div class="field"><label for="repo">GitHub repository</label><input id="repo" value="unisocsu/kagle_ai_generator_music" dir="ltr"></div>
+  <div class="field"><label for="token">Fine-grained Personal Access Token</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…" dir="ltr"></div>
+  <p>צור Token שמוגבל לריפו הזה עם הרשאות <b>Issues: Read and write</b> ו־<b>Actions: Read and write</b>. הטוקן נשמר רק ב־localStorage של הדפדפן ומשמש את הדף ליצירת בקשות ולהפעלת Workflows.</p>
+  <p>ב־GitHub Actions צריכים להיות מוגדרים גם הסודות הקיימים של Kaggle: <code>kagle_user_name</code> ו־<code>kagle_key</code>.</p>
+  <div class="dialog-actions"><button class="primary" id="saveSettings">שמור</button><button id="closeSettings">סגור</button></div>
+</dialog>
+<div id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const JOB_PREFIX = "[music-job] ";
+  const JOB_MARKER = "<!--ace-music-job:v1-->";
+  const EVENT_MARKER = "<!--ace-music-event:v1-->";
+  const RESULT_MARKER = "<!--ace-music-result:v1-->";
+  const STATUS_MARKER = "<!--ace-music-worker-status:v1-->";
+  const KEY = "aceMusicStudioSettingsV1";
+  let settings = loadSettings();
+  let busy = false;
+
+  function loadSettings() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "{}"); }
+    catch (_) { return {}; }
+  }
+  function toast(message) {
+    $("toast").textContent = message;
+    $("toast").classList.add("show");
+    setTimeout(() => $("toast").classList.remove("show"), 3200);
+  }
+  function authHeaders() {
+    if (!settings.token || !settings.repo) throw new Error("פתח הגדרות והזן Repository וטוקן GitHub.");
+    return {
+      "Authorization": "Bearer " + settings.token,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    };
+  }
+  async function api(path, method="GET", body=null) {
+    const response = await fetch("https://api.github.com/repos/" + settings.repo + path, {
+      method,
+      headers: authHeaders(),
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (response.status === 204) return null;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error("GitHub API " + response.status + ": " + (data.message || response.statusText));
+    return data;
+  }
+  function parseJsonAfter(body, marker) {
+    if (!body || !body.startsWith(marker)) return null;
+    try { return JSON.parse(body.slice(marker.length).trim()); }
+    catch (_) { return null; }
+  }
+  function setWorker(state, ts, details) {
+    const fresh = ts && (Date.now()/1000 - Number(ts) < 180);
+    const online = fresh && ["online","processing","starting"].includes(state);
+    $("statusDot").className = "dot " + (online ? "online" : "offline");
+    const names = {online:"מחובר · מוכן",processing:"יוצר עכשיו",starting:"טוען מודל",offline:"לא מחובר",stop:"עוצר"};
+    $("statusText").textContent = fresh ? (names[state] || state) : "לא מחובר";
+    $("workerInfo").textContent = fresh
+      ? ((names[state] || state) + (details && details.job ? " · בקשה #" + details.job : "") +
+         (details && details.completed_jobs != null ? " · הושלמו " + details.completed_jobs : ""))
+      : "ה־Worker כבוי או שדיווח המצב שלו לא עודכן לאחרונה.";
+    $("startBtn").disabled = online;
+    $("stopBtn").disabled = !online;
+  }
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function renderJob(issue, state, data) {
+    const card = el("article","job");
+    const top = el("div","job-top");
+    const title = el("div","job-title",issue.title.replace(JOB_PREFIX,""));
+    const status = el("span","status " + (state === "complete" ? "complete" : state === "failed" ? "failed" : ""),({
+      queued:"בתור",running:"בתהליך",uploading:"מעלה קובץ",complete:"הושלם",failed:"נכשל"
+    })[state] || "ממתין");
+    top.append(title,status);
+    card.append(top);
+    card.append(el("div","job-meta","בקשה #" + issue.number + " · " + new Date(issue.created_at).toLocaleString("he-IL")));
+    if (data && data.message) card.append(el("div","job-message",data.message));
+    if (state === "complete" && data && Array.isArray(data.assets)) {
+      for (const asset of data.assets) {
+        if (!asset.url || !asset.url.startsWith("https://github.com/")) continue;
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        audio.preload = "none";
+        audio.src = asset.url;
+        audio.setAttribute("aria-label","השמע " + (asset.name || "קובץ אודיו"));
+        card.append(audio);
+        const link = el("a","", "הורדת " + (asset.name || "קובץ WAV"));
+        link.href = asset.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        card.append(link);
+      }
+    } else {
+      const link = el("a","", "פתח בקשת GitHub");
+      link.href = issue.html_url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      card.append(link);
+    }
+    return card;
+  }
+
+  async function refresh() {
+    if (!settings.token || !settings.repo || busy) return;
+    try {
+      const issues = await api("/issues?state=all&per_page=100&sort=created&direction=desc");
+      const statusIssue = (issues || []).find(x => !x.pull_request && x.title === "[music-worker-status]");
+      if (statusIssue) {
+        const worker = parseJsonAfter(statusIssue.body || "", STATUS_MARKER);
+        if (worker) setWorker(worker.state, worker.ts, worker);
+        else setWorker("offline",0,null);
+      } else {
+        setWorker("offline",0,null);
+      }
+
+      const jobs = (issues || []).filter(x => !x.pull_request && String(x.title || "").startsWith(JOB_PREFIX)).slice(0,10);
+      $("queueCount").textContent = jobs.length + " בקשות";
+      const root = $("jobs");
+      root.replaceChildren();
+      if (!jobs.length) {
+        root.append(el("div","empty","עדיין אין בקשות. צור את השיר הראשון שלך."));
+        return;
+      }
+      for (const issue of jobs) {
+        let state = issue.state === "closed" ? "complete" : "queued";
+        let data = null;
+        try {
+          const comments = await api("/issues/" + issue.number + "/comments?per_page=100");
+          for (const comment of comments || []) {
+            const result = parseJsonAfter(comment.body || "", RESULT_MARKER);
+            const event = parseJsonAfter(comment.body || "", EVENT_MARKER);
+            if (result) { data = result; state = result.state || "complete"; }
+            else if (event && !data) { data = event; state = event.state || state; }
+          }
+        } catch (_) {}
+        root.append(renderJob(issue,state,data));
+      }
+    } catch (error) {
+      $("workerInfo").textContent = error.message;
+      $("statusText").textContent = "שגיאת חיבור";
+      $("statusDot").className = "dot offline";
+    }
+  }
+
+  async function submitJob(event) {
+    event.preventDefault();
+    if (busy) return;
+    const prompt = $("prompt").value.trim();
+    const lyrics = $("lyrics").value.trim();
+    const duration = Number($("duration").value);
+    const seed = Number($("seed").value);
+    if (!prompt) return toast("צריך לכתוב תיאור למוזיקה.");
+    if (!Number.isFinite(duration) || duration < 10 || duration > 180) return toast("המשך צריך להיות בין 10 ל־180 שניות.");
+    if (!Number.isInteger(seed) || seed < -1) return toast("Seed צריך להיות ‎-1 או מספר שלם חיובי.");
+    busy = true;
+    $("submitBtn").disabled = true;
+    $("submitBtn").textContent = "שולח לתור…";
+    try {
+      const payload = {
+        prompt, lyrics, duration, seed,
+        instrumental: $("instrumental").checked,
+        vocal_language: $("language").value
+      };
+      const issue = await api("/issues","POST",{
+        title: JOB_PREFIX + prompt.slice(0,70),
+        body: JOB_MARKER + "\n" + JSON.stringify(payload,null,2)
+      });
+      toast("הבקשה #" + issue.number + " נכנסה לתור.");
+      $("prompt").value = "";
+      $("lyrics").value = "";
+      $("promptCount").textContent = "0";
+      await refresh();
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      busy = false;
+      $("submitBtn").disabled = false;
+      $("submitBtn").textContent = "♫ הוסף לתור היצירה";
+    }
+  }
+
+  async function dispatchWorkflow(name, inputs={}) {
+    if (busy) return;
+    busy = true;
+    try {
+      await api("/actions/workflows/" + name + "/dispatches","POST",{ref:"main",inputs});
+      toast(name === "start-music-worker.yml" ? "בקשת הפעלה נשלחה ל־GitHub Actions." : "בקשת עצירה נשלחה.");
+      setTimeout(refresh,2500);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      busy = false;
+    }
+  }
+
+  $("prompt").addEventListener("input",() => $("promptCount").textContent = String($("prompt").value.length));
+  $("musicForm").addEventListener("submit",submitJob);
+  $("refreshBtn").addEventListener("click",refresh);
+  $("startBtn").addEventListener("click",() => dispatchWorkflow("start-music-worker.yml",{idle_minutes:"30"}));
+  $("stopBtn").addEventListener("click",() => dispatchWorkflow("stop-music-worker.yml"));
+  $("settingsBtn").addEventListener("click",() => {
+    $("repo").value = settings.repo || "unisocsu/kagle_ai_generator_music";
+    $("token").value = settings.token || "";
+    $("settings").showModal();
+  });
+  $("closeSettings").addEventListener("click",() => $("settings").close());
+  $("saveSettings").addEventListener("click",() => {
+    settings = {repo:$("repo").value.trim(),token:$("token").value.trim()};
+    localStorage.setItem(KEY,JSON.stringify(settings));
+    $("settings").close();
+    toast("ההגדרות נשמרו בדפדפן.");
+    refresh();
+  });
+
+  if (settings.repo) $("repo").value = settings.repo;
+  refresh();
+  setInterval(refresh,15000);
+})();
+</script>
+</body>
+</html>
