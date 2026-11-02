@@ -67,3 +67,42 @@ Actions → **Generate music on Kaggle (ACE-Step 1.5)** → Run workflow.
 - **קבצים כבדים מחוץ ל-`/kaggle/working`**: הריפו, הסביבה והמשקלים נשמרים ב-`/kaggle/temp`, כדי ש-`kaggle kernels output` יוריד רק את ה-WAV והלוגים.
 - **תאימות לגרסאות**: `generate.py` מעביר ל-ACE-Step רק פרמטרים שהגרסה המותקנת מכירה, ומנסה אתחול חלופי (בלי קוונטיזציה) ואחר כך בלי LM, במקום ליפול על הבדל קטן בחתימה.
 - שני כרטיסי T4 אינם מאוחדים לזיכרון אחד; המנוע משתמש בכרטיס הראשון עם offload ל-CPU.
+
+## Worker מתמשך ליצירת שירים
+
+בנוסף ליצירה החד-פעמית, נוסף מצב Worker בסגנון הפרויקט [cpu-and-gpu-ai-runs](https://github.com/unisocsu/cpu-and-gpu-ai-runs):
+
+- דף GitHub Pages: `docs/index.html`.
+- בקשות חדשות נשמרות כ-GitHub Issues עם הכותרת `[music-job]`.
+- Worker אחד ב-Kaggle קורא את התור ומעבד שירים בזה אחר זה.
+- הקבצים עולים ל-GitHub Release נפרד לכל בקשה, והדף מציג נגן והורדה.
+- ה־DiT וה־planner נשארים טעונים בזיכרון לאורך חיי ה־Worker. לא מורידים ולא מאתחלים אותם מחדש לכל שיר.
+- ברירת המחדל של ה־Worker היא `acestep-v15-turbo` (דגם 2B) יחד עם `acestep-5Hz-lm-0.6B`. זה קטן ומהיר יותר מה־XL Turbo 4B שבמצב החד-פעמי, במחיר פוטנציאלי של ירידה מסוימת באיכות/יכולת התכנון.
+
+### הפעלה ראשונית
+
+1. ודא שקיימים אותם Kaggle secrets שמוגדרים למעלה: `kagle_user_name` ו־`kagle_key`.
+2. ב־GitHub → Settings → Pages, בחר **Deploy from a branch**, ענף `main`, תיקייה `/docs`.
+3. פתח את דף ה־Pages. לחץ ⚙️ והדבק Fine-grained PAT שמוגבל לריפו הזה עם הרשאות:
+   - **Issues: Read and write**
+   - **Actions: Read and write**
+4. לחץ **הפעל Worker**. ההפעלה הראשונה מורידה ומאתחלת את המודלים, ולכן היא איטית יותר מהבקשות הבאות.
+5. אחרי שהמצב מציג **מחובר · מוכן**, שלח תיאור שיר. הבקשות נכנסות לתור, וה־Worker יוצר אותן ברצף.
+6. לחץ **עצור Worker** כדי לבקש כיבוי מסודר. אפשר גם להמתין לכיבוי אוטומטי אחרי 30 דקות ללא בקשות.
+
+ה־Worker מוגבל לאורך החיים של Kaggle ולמכסות שלו: הוא אינו שרת תמידי ללא הגבלה. ברירת המחדל היא כיבוי אחרי 30 דקות ללא פעילות או אחרי עד 5 שעות עבודה; אפשר להפעיל אותו מחדש מאותו דף.
+
+**פרטיות:** הריפו הזה ציבורי. תוכן הבקשות, תגובות הסטטוס וקובצי ה־WAV שמפורסמים ב־Releases יהיו ציבוריים. אל תשלח מידע פרטי. ה־PAT נשמר ב־localStorage בדפדפן בלבד; ה־Worker מקבל GITHUB_TOKEN מוגבל של ריצת ה־Actions שמפעילה אותו, וה־Kaggle kernel מוגדר כפרטי.
+
+### קבצי ה־Worker
+
+| קובץ | תפקיד |
+|---|---|
+| `.github/workflows/start-music-worker.yml` | הפעלת Kernel מתמשך והמתנה לסיום |
+| `.github/workflows/stop-music-worker.yml` | בקשת כיבוי דרך Issue הסטטוס |
+| `scripts/push_music_worker.py` | בניית Kernel פרטי ודחיפתו ל־Kaggle |
+| `scripts/wait_music_worker.py` | המתנה למצב הסיום של Kaggle |
+| `kernel/music_worker_bootstrap.py` | התקנת ACE-Step בסביבת Python 3.12 והפעלת המנוע |
+| `kernel/music_worker.py` | טעינת המודלים פעם אחת, תור הבקשות ופרסום קובצי האודיו |
+| `docs/index.html` | ממשק יצירה, מצב Worker, תור וניגון תוצאות |
+
