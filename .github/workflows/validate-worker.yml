@@ -1,0 +1,82 @@
+name: Validate music worker
+
+on:
+  push:
+    paths:
+      - "kernel/music_worker.py"
+      - "kernel/music_worker_bootstrap.py"
+      - "scripts/push_music_worker.py"
+      - "scripts/wait_music_worker.py"
+      - "docs/index.html"
+      - ".github/workflows/start-music-worker.yml"
+      - ".github/workflows/stop-music-worker.yml"
+      - ".github/workflows/validate-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python syntax
+        run: |
+          python -m py_compile \
+            kernel/music_worker.py \
+            kernel/music_worker_bootstrap.py \
+            scripts/push_music_worker.py \
+            scripts/wait_music_worker.py
+
+      - name: Worker payload and request parsing smoke test
+        run: |
+          python - <<'PY'
+          import json
+          import runpy
+
+          ns = runpy.run_path("kernel/music_worker.py")
+          marker = ns["JOB_MARKER"]
+          valid = {
+              "prompt": "Upbeat piano pop",
+              "lyrics": "",
+              "duration": 30,
+              "seed": -1,
+              "instrumental": True,
+              "vocal_language": "en",
+          }
+          parsed = ns["parse_job_body"](marker + json.dumps(valid))
+          assert parsed and parsed["prompt"] == valid["prompt"]
+          assert ns["parse_job_body"](marker + '{"prompt":"","duration":30}') is None
+          assert ns["parse_job_body"](marker + '{"prompt":"test","duration":999}') is None
+
+          template = open("kernel/music_worker_bootstrap.py", encoding="utf-8").read()
+          assert template.count("__MUSIC_WORKER_CONFIG_B64__") == 1
+          assert template.count("__MUSIC_WORKER_ENGINE_B64__") == 1
+          print("worker request and bundle checks passed")
+          PY
+
+      - name: HTML and browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import re
+
+          class CheckHTML(HTMLParser):
+              pass
+
+          html = Path("docs/index.html").read_text(encoding="utf-8")
+          parser = CheckHTML()
+          parser.feed(html)
+          scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+          assert scripts, "No inline app script found"
+          Path("/tmp/music-ui.js").write_text(scripts[0], encoding="utf-8")
+          print("HTML parsed")
+          PY
+          node --check /tmp/music-ui.js
