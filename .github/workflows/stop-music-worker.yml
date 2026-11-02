@@ -1,0 +1,26 @@
+name: Stop ACE-Step music worker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request worker shutdown
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          issue=$(gh api "repos/$REPO/issues?state=open&per_page=100" \
+            --jq '[.[] | select(.title=="[music-worker-status]")][0].number')
+          if [ -z "$issue" ] || [ "$issue" = "null" ]; then
+            echo "No active music worker status issue was found."
+            exit 0
+          fi
+          body=$(printf '<!--ace-music-worker-status:v1-->\n{"state":"stop","ts":%s}' "$(date +%s)")
+          gh api -X PATCH "repos/$REPO/issues/$issue" -f body="$body" > /dev/null
+          echo "Stop requested for music worker (status issue #$issue)."
