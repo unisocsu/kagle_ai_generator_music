@@ -201,9 +201,9 @@ dialog p{font-size:13px;color:var(--muted)}
   }
   function setWorker(state, ts, details) {
     const fresh = ts && (Date.now()/1000 - Number(ts) < 180);
-    const online = fresh && ["online","processing","starting"].includes(state);
+    const online = fresh && ["online","idle","processing","starting"].includes(state);
     $("statusDot").className = "dot " + (online ? "online" : "offline");
-    const names = {online:"מחובר · מוכן",processing:"יוצר עכשיו",starting:"טוען מודל",offline:"לא מחובר",stop:"עוצר"};
+    const names = {online:"מחובר · מוכן",idle:"מחובר · ממתין",processing:"יוצר עכשיו",starting:"טוען מודל",offline:"לא מחובר",stop:"עוצר"};
     $("statusText").textContent = fresh ? (names[state] || state) : "לא מחובר";
     $("workerInfo").textContent = fresh
       ? ((names[state] || state) + (details && details.job ? " · בקשה #" + details.job : "") +
@@ -284,7 +284,7 @@ dialog p{font-size:13px;color:var(--muted)}
             const result = parseJsonAfter(comment.body || "", RESULT_MARKER);
             const event = parseJsonAfter(comment.body || "", EVENT_MARKER);
             if (result) { data = result; state = result.state || "complete"; }
-            else if (event && !data) { data = event; state = event.state || state; }
+            else if (event && !(data && data.state === "complete")) { data = event; state = event.state || state; }
           }
         } catch (_) {}
         root.append(renderJob(issue,state,data));
